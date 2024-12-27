@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>휘매쓰 연산 챌린지!</title>
+  <!-- MathJax 라이브러리 -->
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" defer></script>
+  <style>
+    /* =====================
+       간단한 스타일링
+       ===================== */
+    body {
+      margin: 0; padding: 0;
+      font-family: sans-serif;
+      background: #f8f8f8;
+      color: #333;
+    }
+    header {
+      background: #ff6b6b;
+      color: #fff;
+      text-align: center;
+      padding: 1rem;
+      font-size: 1.5rem;
+      font-weight: bold;
+    }
+    #main {
+      max-width: 640px;
+      margin: 1rem auto;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      padding: 1rem 2rem 2rem;
+    }
+    .hidden { display: none; }
+
+    /* 난이도 버튼 */
+    .difficulty-buttons button {
+      margin: 0.5rem;
+      padding: 0.8rem 1.2rem;
+      border-radius: 5px;
+      border: none;
+      cursor: pointer;
+      color: #fff;
+      font-weight: bold;
+    }
+    .difficulty-buttons button:hover {
+      opacity: 0.9;
+    }
+    #btn-hardest { background: #ff5252; }
+    #btn-hard   { background: #ff793f; }
+    #btn-medium { background: #ffb142; }
+    #btn-easy   { background: #33d9b2; }
+
+    /* 에너지바 */
+    #energy-bar-container {
+      position: relative;
+      width: 100%;
+      height: 20px;
+      background: #ddd;
+      margin: 1.5rem 0;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    #energy-bar {
+      position: absolute;
+      top: 0; left: 0;
+      height: 100%;
+      background: #74b9ff;
+      width: 100%;
+      transition: width 0.2s linear;
+    }
+
+    /* 문제/보기 영역 */
+    #question-box {
+      margin-bottom: 1rem;
+      min-height: 60px;
+      font-size: 1.1rem;
+      line-height: 1.4rem;
+    }
+    .choice-list {
+      list-style: none;
+      padding-left: 0;
+    }
+    .choice-list li {
+      margin: 0.5rem 0;
+    }
+    .choice-list button {
+      width: 100%;
+      text-align: left;
+      padding: 0.6rem;
+      border-radius: 4px;
+      background: #f0f0f0;
+      border: 1px solid #ccc;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    .choice-list button:hover {
+      background: #dfe6e9;
+    }
+
+    /* 점수/기회/타이머 */
+    #info-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+      font-size: 0.95rem;
+      color: #444;
+    }
+
+    /* 게임 오버 / 정답 표시 */
+    #overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.7);
+      color: #fff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 2rem;
+      box-sizing: border-box;
+      font-size: 1.2rem;
+      z-index: 9999;
+    }
+    #overlay.hidden { display: none; }
+    #overlay button {
+      margin-top: 2rem;
+      padding: 0.8rem 1.5rem;
+      font-size: 1rem;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      background: #ff6b6b;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <header>휘매쓰 연산 챌린지!</header>
+  <div id="main">
+
+    <!-- 난이도 선택 화면 -->
+    <div id="difficulty-screen">
+      <p>난이도를 선택하세요!</p>
+      <div class="difficulty-buttons">
+        <button id="btn-hardest">최상 (20초 / 문제당 20점)</button>
+        <button id="btn-hard">상 (30초 / 문제당 15점)</button>
+        <button id="btn-medium">중 (40초 / 문제당 13점)</button>
+        <button id="btn-easy">하 (시간제한 없음 / 문제당 10점)</button>
+      </div>
+    </div>
+
+    <!-- 실제 퀴즈 화면 -->
+    <div id="quiz-screen" class="hidden">
+      <div id="info-bar">
+        <div>총 게임 시간: <span id="total-time">0</span>초</div>
+        <div>남은 기회: <span id="lives">3</span></div>
+        <div>점수: <span id="score">0</span></div>
+      </div>
+
+      <div id="energy-bar-container">
+        <div id="energy-bar"></div>
+      </div>
+
+      <div id="question-box"></div>
+      <ul class="choice-list" id="choice-list"></ul>
+    </div>
+
+    <!-- 오버레이(게임오버/정답 표시 등) -->
+    <div id="overlay" class="hidden"></div>
+  </div>
+
+  <script>
+    /************************************************
+     * MathJax 수식이 새로 생길 때마다 재렌더링
+     ************************************************/
+    function renderMath() {
+      if (window.MathJax && MathJax.typeset) {
+        MathJax.typeset();
+      }
+    }
+
+    /************************************************
+     * 보기 배열을 무작위로 섞는 함수
+     ************************************************/
+    function shuffleArray(arr) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    /************************************************
+     * 문제 데이터 (3지선다 + 4지선다, 총 50문항)
+     * - 모든 문제를 하나도 빠짐없이!
+     * - 정답 텍스트(correctAnswer), 보기(choices)는
+     *   추후 shuffle할 때 correctIndex를 재매핑합니다.
+     ************************************************/
+    const questionData = [
+      /* ========== (1) 3지선다: 대소 비교 문제 25문항 ========== */
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하여 ○ 안에 들어갈 기호(>, =, <)를 고르세요: \\(3.047\\square 3.047\\)",
+        correctAnswer: "=",
+        choices: [">", "=", "<"],
+        explanation: "3.047과 3.047은 같으므로 = 입니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(1.5\\square 1.05\\)",
+        correctAnswer: ">",
+        choices: [">", "=", "<"],
+        explanation: "1.5는 1.05보다 크므로 > 입니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(0.89\\square 0.909\\)",
+        correctAnswer: "<",
+        choices: [">", "=", "<"],
+        explanation: "0.89는 0.909보다 작으므로 < 입니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(2.7\\square 2.70\\)",
+        correctAnswer: "=",
+        choices: [">", "=", "<"],
+        explanation: "2.7와 2.70은 같은 값이므로 = 입니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(0.306\\square 0.360\\)",
+        correctAnswer: "<",
+        choices: [">", "=", "<"],
+        explanation: "0.306은 0.360보다 작습니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(4.989\\square 5.001\\)",
+        correctAnswer: "<",
+        choices: [">", "=", "<"],
+        explanation: "4.989는 5.001보다 작습니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(10.03\\square 9.977\\)",
+        correctAnswer: ">",
+        choices: [">", "=", "<"],
+        explanation: "10.03은 9.977보다 큽니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(2.305\\square 2.3050\\)",
+        correctAnswer: "=",
+        choices: [">", "=", "<"],
+        explanation: "2.305와 2.3050은 같은 값입니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(1.0001\\square 0.9999\\)",
+        correctAnswer: ">",
+        choices: [">", "=", "<"],
+        explanation: "1.0001은 0.9999보다 큽니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(0.405\\square 0.45\\)",
+        correctAnswer: "<",
+        choices: [">", "=", "<"],
+        explanation: "0.405는 0.45보다 작습니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(4.01\\square 3.999\\)",
+        correctAnswer: ">",
+        choices: [">", "=", "<"],
+        explanation: "4.01은 3.999보다 큽니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(0.600\\square 0.6\\)",
+        correctAnswer: "=",
+        choices: [">", "=", "<"],
+        explanation: "0.600은 0.6과 동일합니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(7.777\\square 7.776\\)",
+        correctAnswer: ">",
+        choices: [">", "=", "<"],
+        explanation: "7.777은 7.776보다 큽니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(9.109\\square 9.11\\)",
+        correctAnswer: "<",
+        choices: [">", "=", "<"],
+        explanation: "9.109는 9.11보다 작습니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(0.123\\square 0.12\\)",
+        correctAnswer: ">",
+        choices: [">", "=", "<"],
+        explanation: "0.123은 0.12보다 큽니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(5.5\\square 5.50\\)",
+        correctAnswer: "=",
+        choices: [">", "=", "<"],
+        explanation: "5.5와 5.50은 같습니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(3.14\\square 3.139\\)",
+        correctAnswer: ">",
+        choices: [">", "=", "<"],
+        explanation: "3.14는 3.139보다 큽니다 (소수점 둘째자리 비교)."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(8.065\\square 8.06\\)",
+        correctAnswer: ">",
+        choices: [">", "=", "<"],
+        explanation: "8.065는 8.06보다 큽니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(2.501\\square 2.5010\\)",
+        correctAnswer: "=",
+        choices: [">", "=", "<"],
+        explanation: "2.501과 2.5010은 같은 값입니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(1.000\\square 1.0\\)",
+        correctAnswer: "=",
+        choices: [">", "=", "<"],
+        explanation: "1.000과 1.0은 같은 값입니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(0.449\\square 0.45\\)",
+        correctAnswer: "<",
+        choices: [">", "=", "<"],
+        explanation: "0.449는 0.45보다 작습니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(6.01\\square 6.010\\)",
+        correctAnswer: "=",
+        choices: [">", "=", "<"],
+        explanation: "6.01과 6.010은 같은 값입니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(0.333\\square 0.3333\\)",
+        correctAnswer: "<",
+        choices: [">", "=", "<"],
+        explanation: "0.333은 0.3333보다 작습니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(12.2\\square 12.19\\)",
+        correctAnswer: ">",
+        choices: [">", "=", "<"],
+        explanation: "12.2는 12.19보다 큽니다."
+      },
+      {
+        type: "3-choice",
+        question: "다음 소수의 크기를 비교하세요: \\(0.99\\square 1.00\\)",
+        correctAnswer: "<",
+        choices: [">", "=", "<"],
+        explanation: "0.99는 1.00보다 작습니다."
+      },
+
+      /* ========== (2) 4지선다: 같은 소수 찾기 문제 25문항 ========== */
+      {
+        type: "4-choice",
+        question: "다음 중 \\(0.9\\)와 같은 수를 고르세요.",
+        correctAnswer: "0.90",
+        choices: ["0.09", "0.90", "0.909", "9.0"],
+        explanation: "0.9 = 0.90"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(3.9\\)와 같은 수를 고르세요.",
+        correctAnswer: "3.90",
+        choices: ["0.39", "3.09", "3.90", "39.0"],
+        explanation: "3.9 = 3.90"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(0.405\\)와 같은 수를 고르세요.",
+        correctAnswer: "0.4050",
+        choices: ["4.05", "0.4050", "0.45", "0.4005"],
+        explanation: "0.405 = 0.4050"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(1.05\\)와 같은 수를 고르세요.",
+        correctAnswer: "1.050",
+        choices: ["1.050", "1.005", "1.5", "0.105"],
+        explanation: "1.05 = 1.050"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(7.070\\)과 같은 수를 고르세요.",
+        correctAnswer: "7.0700",
+        choices: ["7.7", "7.707", "7.0700", "70.70"],
+        explanation: "7.070 = 7.0700"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(0.300\\)과 같은 수를 고르세요.",
+        correctAnswer: "0.3000",
+        choices: ["0.303", "0.3000", "3.00", "0.03"],
+        explanation: "0.300 = 0.3000"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(4.009\\)와 같은 수를 고르세요.",
+        correctAnswer: "4.0090",
+        choices: ["4.09", "0.4009", "4.0090", "4.0009"],
+        explanation: "4.009 = 4.0090"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(12.300\\)과 같은 수를 고르세요.",
+        correctAnswer: "12.3",
+        choices: ["12.3", "123.0", "1.2300", "12.03"],
+        explanation: "12.300 = 12.3"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(0.777\\)과 같은 수를 고르세요.",
+        correctAnswer: "0.7770",
+        choices: ["0.7770", "0.77", "77.7", "0.707"],
+        explanation: "0.777 = 0.7770"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(3.050\\)과 같은 수를 고르세요.",
+        correctAnswer: "3.0500",
+        choices: ["3.5", "3.0500", "30.50", "3.005"],
+        explanation: "3.050 = 3.0500"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(2.100\\)과 같은 수를 고르세요.",
+        correctAnswer: "2.1",
+        choices: ["2.1", "2.01", "21.0", "2.010"],
+        explanation: "2.100 = 2.1"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(0.090\\)과 같은 수를 고르세요.",
+        correctAnswer: "0.0900",
+        choices: ["0.9", "0.009", "0.0900", "0.99"],
+        explanation: "0.090 = 0.0900"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(9.0\\)과 같은 수를 고르세요.",
+        correctAnswer: "9.00",
+        choices: ["9.00", "0.90", "90.0", "9.0001"],
+        explanation: "9.0 = 9.00"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(5.050\\)과 같은 수를 고르세요.",
+        correctAnswer: "5.0500",
+        choices: ["5.5", "5.0500", "50.50", "5.005"],
+        explanation: "5.050 = 5.0500"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(10.0\\)과 같은 수를 고르세요.",
+        correctAnswer: "10.00",
+        choices: ["10.00", "1.00", "100.0", "0.100"],
+        explanation: "10.0 = 10.00"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(0.333\\)과 같은 수를 고르세요.",
+        correctAnswer: "0.3330",
+        choices: ["0.33", "0.3003", "0.3330", "0.0333"],
+        explanation: "0.333 = 0.3330"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(8.800\\)과 같은 수를 고르세요.",
+        correctAnswer: "8.80",
+        choices: ["88.0", "8.80", "0.8800", "8.008"],
+        explanation: "8.800 = 8.80"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(0.500\\)과 같은 수를 고르세요.",
+        correctAnswer: "0.5",
+        choices: ["0.050", "0.5", "0.5005", "5.00"],
+        explanation: "0.500 = 0.5"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(6.060\\)과 같은 수를 고르세요.",
+        correctAnswer: "6.06",
+        choices: ["6.06", "6.600", "0.606", "6.006"],
+        explanation: "6.060 = 6.06"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(1.111\\)과 같은 수를 고르세요.",
+        correctAnswer: "1.1110",
+        choices: ["1.101", "1.1110", "11.11", "0.1111"],
+        explanation: "1.111 = 1.1110"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(0.750\\)과 같은 수를 고르세요.",
+        correctAnswer: "0.75",
+        choices: ["0.75", "7.50", "0.705", "0.0750"],
+        explanation: "0.750 = 0.75"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(3.333\\)과 같은 수를 고르세요.",
+        correctAnswer: "3.3330",
+        choices: ["33.33", "3.0333", "3.3330", "3.3333"],
+        explanation: "3.333 = 3.3330"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(10.01\\)과 같은 수를 고르세요.",
+        correctAnswer: "10.0100",
+        choices: ["10.0100", "10.1", "1.001", "100.1"],
+        explanation: "10.01 = 10.0100"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(4.999\\)과 같은 수를 고르세요.",
+        correctAnswer: "4.9990",
+        choices: ["4.9999", "4.99", "4.9990", "49.99"],
+        explanation: "4.999 = 4.9990"
+      },
+      {
+        type: "4-choice",
+        question: "다음 중 \\(2.020\\)과 같은 수를 고르세요.",
+        correctAnswer: "2.02",
+        choices: ["2.02", "20.2", "0.2020", "2.002"],
+        explanation: "2.020 = 2.02"
+      }
+    ];
+
+    /************************************************
+     * 전역 상태 변수들
+     ************************************************/
+    let allQuestions = [];
+    let currentQuestionIndex = 0;    // 현재 문제 인덱스
+    let lives = 3;                  // 남은 기회
+    let score = 0;                  // 현재 점수
+    let totalSeconds = 0;           // 전체 게임 시간(초)
+    let totalTimer = null;          // 전체 시간 측정용
+    let questionTimer = null;       // 문제별 에너지바 타이머
+    let timeLimit = Infinity;       // 난이도별 제한시간 (기본은 무제한)
+
+    // HTML 엘리먼트 참조
+    const difficultyScreen = document.getElementById("difficulty-screen");
+    const quizScreen        = document.getElementById("quiz-screen");
+    const questionBox       = document.getElementById("question-box");
+    const choiceList        = document.getElementById("choice-list");
+    const overlay           = document.getElementById("overlay");
+    const energyBar         = document.getElementById("energy-bar");
+    const totalTimeSpan     = document.getElementById("total-time");
+    const livesSpan         = document.getElementById("lives");
+    const scoreSpan         = document.getElementById("score");
+
+    /************************************************
+     * 난이도 선택 버튼 이벤트
+     ************************************************/
+    document.getElementById("btn-hardest").onclick = function() {
+      startGame(20, 20); // 최상: 문제당 20초, 점수 20점
+    };
+    document.getElementById("btn-hard").onclick = function() {
+      startGame(30, 15); // 상: 문제당 30초, 점수 15점
+    };
+    document.getElementById("btn-medium").onclick = function() {
+      startGame(40, 13); // 중: 문제당 40초, 점수 13점
+    };
+    document.getElementById("btn-easy").onclick = function() {
+      startGame(Infinity, 10); // 하: 시간무제한, 점수 10점
+    };
+
+    /************************************************
+     * 게임 시작: 난이도 설정 후 문제 목록 셔플 등
+     ************************************************/
+    function startGame(limit, pointPerQuestion) {
+      difficultyScreen.classList.add("hidden");
+      quizScreen.classList.remove("hidden");
+
+      // 시간/점수/기회 초기화
+      timeLimit = limit; 
+      score = 0; 
+      lives = 3; 
+      currentQuestionIndex = 0;
+      scoreSpan.textContent = score;
+      livesSpan.textContent = lives;
+      totalSeconds = 0;
+
+      // 문제 배열을 복제+셔플
+      allQuestions = shuffleArray([...questionData]);
+      // 각 문제마다 보기를 셔플, correctIndex 재할당
+      allQuestions.forEach(q => {
+        // 3지/4지 선다 모두 choices 내 순서를 섞고,
+        // correctAnswer의 새 인덱스를 correctIndex로 설정
+        const originalChoices = [...q.choices];
+        shuffleArray(q.choices);
+        q.correctIndex = q.choices.indexOf(q.correctAnswer);
+      });
+
+      // 전체 게임 시간 타이머 시작
+      if (totalTimer) clearInterval(totalTimer);
+      totalTimer = setInterval(() => {
+        totalSeconds++;
+        totalTimeSpan.textContent = totalSeconds;
+      }, 1000);
+
+      // 첫 문제 표시
+      showQuestion(pointPerQuestion);
+    }
+
+    /************************************************
+     * 문제 표시
+     ************************************************/
+    function showQuestion(pointPerQuestion) {
+      // 게임오버 체크
+      if (lives <= 0) {
+        endGame("기회를 모두 소진했습니다! 게임 종료");
+        return;
+      }
+
+      let q = null;
+      // 만약 아직 50문제 중 남은 게 있으면 그걸 사용
+      if (currentQuestionIndex < allQuestions.length) {
+        q = allQuestions[currentQuestionIndex];
+      } else {
+        // 50문제를 다 소진한 뒤에는 무한 랜덤
+        const rnd = Math.floor(Math.random() * allQuestions.length);
+        q = allQuestions[rnd];
+      }
+
+      // 문제 텍스트 반영
+      questionBox.innerHTML = q.question;
+      // 보기 표시
+      choiceList.innerHTML = "";
+      for (let i = 0; i < q.choices.length; i++) {
+        const li = document.createElement("li");
+        const btn = document.createElement("button");
+        btn.textContent = q.choices[i];
+        btn.onclick = () => {
+          checkAnswer(i, q, pointPerQuestion);
+        };
+        li.appendChild(btn);
+        choiceList.appendChild(li);
+      }
+
+      // MathJax 수식 렌더링
+      renderMath();
+
+      // 에너지바 초기화
+      if (questionTimer) clearInterval(questionTimer);
+      energyBar.style.width = "100%";
+
+      // 시간제한이 없는 경우(하), 바로 종료
+      if (timeLimit === Infinity) return;
+
+      // 문제별 타이머 동작
+      let remain = timeLimit; // 난이도별 제한시간
+      questionTimer = setInterval(() => {
+        remain--;
+        const percent = (remain / timeLimit) * 100;
+        energyBar.style.width = percent + "%";
+
+        if (remain <= 0) {
+          clearInterval(questionTimer);
+          // 시간 초과 => 기회 1 감소
+          lives--;
+          livesSpan.textContent = lives;
+
+          // 바로 다음 문제로 넘어감
+          showAnswerOverlay(
+            "시간 초과! 정답 : " + q.correctAnswer,
+            () => {
+              currentQuestionIndex++;
+              showQuestion(pointPerQuestion);
+            }
+          );
+        }
+      }, 1000);
+    }
+
+    /************************************************
+     * 정답체크
+     ************************************************/
+    function checkAnswer(choiceIndex, questionObj, pointPerQuestion) {
+      // 먼저 타이머 종료
+      if (questionTimer) clearInterval(questionTimer);
+
+      if (choiceIndex === questionObj.correctIndex) {
+        // 정답
+        score += pointPerQuestion;
+        scoreSpan.textContent = score;
+
+        showAnswerOverlay("정답입니다!", () => {
+          currentQuestionIndex++;
+          showQuestion(pointPerQuestion);
+        });
+      } else {
+        // 오답
+        lives--;
+        livesSpan.textContent = lives;
+
+        showAnswerOverlay(
+          "틀렸습니다! 정답: " + questionObj.correctAnswer + "<br><br>" + questionObj.explanation,
+          () => {
+            // 3번 틀리면 종료
+            if (lives <= 0) {
+              endGame("기회를 모두 소진했습니다! 게임 종료");
+            } else {
+              currentQuestionIndex++;
+              showQuestion(pointPerQuestion);
+            }
+          }
+        );
+      }
+    }
+
+    /************************************************
+     * 정답/오답 표시 오버레이
+     ************************************************/
+    function showAnswerOverlay(msg, callback) {
+      overlay.classList.remove("hidden");
+      overlay.innerHTML = `
+        <div>${msg}</div>
+        <button>계속하기</button>
+      `;
+      const btn = overlay.querySelector("button");
+      btn.onclick = () => {
+        overlay.classList.add("hidden");
+        callback();
+      };
+    }
+
+    /************************************************
+     * 게임 종료 처리
+     ************************************************/
+    function endGame(message) {
+      // 타이머 클리어
+      if (questionTimer) clearInterval(questionTimer);
+      if (totalTimer) clearInterval(totalTimer);
+
+      overlay.classList.remove("hidden");
+      overlay.innerHTML = `
+        <div>${message}<br><br>
+        최종 점수: ${score}점<br>
+        총 플레이 시간: ${totalSeconds}초
+        </div>
+        <button onclick="location.reload()">처음으로</button>
+      `;
+    }
+  </script>
+</body>
+</html>
